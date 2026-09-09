@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 
 import '../services/api_service.dart';
 import '../widgets/custom_card.dart';
@@ -35,6 +37,7 @@ class Exercise {
   final String exerciseName;
   final String? exerciseUrl;
   final String? youtubeUrl;
+  final String? hostedVideoUrl;
   final int sets;
   final int reps;
   final int holdTimeSec;
@@ -52,6 +55,7 @@ class Exercise {
     required this.exerciseName,
     this.exerciseUrl,
     this.youtubeUrl,
+    this.hostedVideoUrl,
     required this.sets,
     required this.reps,
     required this.holdTimeSec,
@@ -71,6 +75,7 @@ class Exercise {
       exerciseName: json['exercise_name'] ?? 'Unnamed exercise',
       exerciseUrl: json['exercise_url'],
       youtubeUrl: json['youtube_url'],
+      hostedVideoUrl: json['hosted_video_url'],
       sets: json['sets'] ?? 3,
       reps: json['reps'] ?? 10,
       holdTimeSec: json['hold_time_sec'] ?? 0,
@@ -613,8 +618,13 @@ class _ExerciseFeedItemState extends State<_ExerciseFeedItem> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Thumbnail, or step-by-step slideshow if the physio attached one
-          if (exercise.stepImages.isNotEmpty)
+          // Hosted video takes priority when set (matches the backend's
+          // own priority: hosted_video_url over youtube_url), then the
+          // step-by-step slideshow if the physio attached one, then a
+          // plain thumbnail.
+          if ((exercise.hostedVideoUrl ?? '').trim().isNotEmpty)
+            _EmbeddedExerciseVideo(url: exercise.hostedVideoUrl!, height: thumbnailHeight)
+          else if (exercise.stepImages.isNotEmpty)
             _ExerciseImageCarousel(images: exercise.stepImages, height: thumbnailHeight)
           else
             ClipRRect(
@@ -809,7 +819,11 @@ class _ExerciseFeedItemState extends State<_ExerciseFeedItem> {
           color: Colors.blueAccent,
           active: _showSteps,
         ),
-        if ((widget.exercise.youtubeUrl ?? '').trim().isNotEmpty) ...[
+        // Hidden when a hosted video is set -- that's already playing
+        // embedded above, so this button would just be a redundant way to
+        // leave the app for the same thing (or a different one).
+        if ((widget.exercise.youtubeUrl ?? '').trim().isNotEmpty &&
+            (widget.exercise.hostedVideoUrl ?? '').trim().isEmpty) ...[
           const SizedBox(width: 8),
           _pillButton(
             icon: Icons.play_circle_outline,
@@ -1014,6 +1028,111 @@ class _ExerciseFeedItemState extends State<_ExerciseFeedItem> {
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// EMBEDDED EXERCISE VIDEO – plays a hosted video file (e.g. a Supabase
+// Storage URL) in-app, right where the step-image slideshow would
+// otherwise go, instead of leaving the app for YouTube.
+// ---------------------------------------------------------------------------
+class _EmbeddedExerciseVideo extends StatefulWidget {
+  final String url;
+  final double height;
+  const _EmbeddedExerciseVideo({required this.url, required this.height});
+
+  @override
+  State<_EmbeddedExerciseVideo> createState() => _EmbeddedExerciseVideoState();
+}
+
+class _EmbeddedExerciseVideoState extends State<_EmbeddedExerciseVideo> {
+  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
+  bool _loading = true;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    try {
+      await controller.initialize();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() {
+        _videoController = controller;
+        _chewieController = ChewieController(
+          videoPlayerController: controller,
+          // Never autoplay -- a patient scrolling their exercise list
+          // shouldn't get sound/data usage they didn't ask for.
+          autoPlay: false,
+          looping: false,
+          aspectRatio: controller.value.aspectRatio,
+          materialProgressColors: ChewieProgressColors(
+            playedColor: const Color(0xFF0A6EBD),
+            handleColor: const Color(0xFF0A6EBD),
+            bufferedColor: Colors.grey[300]!,
+            backgroundColor: Colors.grey[200]!,
+          ),
+          placeholder: Container(color: Colors.grey[100]),
+          errorBuilder: (_, __) => _errorPlaceholder(),
+        );
+        _loading = false;
+      });
+    } catch (_) {
+      controller.dispose();
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _failed = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _chewieController?.dispose();
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  Widget _errorPlaceholder() {
+    return Container(
+      color: Colors.grey[100],
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, color: Colors.grey[400], size: 32),
+            const SizedBox(height: 6),
+            Text('Could not load video', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: double.infinity,
+        height: widget.height,
+        child: _loading
+            ? Container(color: Colors.grey[100], child: const Center(child: CircularProgressIndicator(strokeWidth: 2)))
+            : (_failed || _chewieController == null)
+                ? _errorPlaceholder()
+                : Chewie(controller: _chewieController!),
       ),
     );
   }
