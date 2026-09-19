@@ -1,19 +1,18 @@
 // lib/screens/dashboard_screen.dart
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
-
 import '../services/api_service.dart';
 import '../widgets/custom_card.dart';
+import '../widgets/embedded_video_player.dart';
+import '../widgets/step_image_carousel.dart';
 import 'login_screen.dart';
 import 'marketplace_screen.dart';
 import 'physio_contact_screen.dart';
 import 'services_screen.dart';
+import 'browse_regions_screen.dart';
 
 // --- Models ---
 class StepImage {
@@ -289,9 +288,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   // Exercise section header
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Exercise Prescriptions',
-                      style: TextStyle(color: Colors.grey[700], fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Exercise Prescriptions',
+                          style: TextStyle(color: Colors.grey[700], fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const BrowseRegionsScreen()),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.menu_book_outlined, size: 14, color: const Color(0xFF0A6EBD)),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'Browse Library',
+                                style: TextStyle(color: Color(0xFF0A6EBD), fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   if (prescription == null)
@@ -623,9 +644,14 @@ class _ExerciseFeedItemState extends State<_ExerciseFeedItem> {
           // step-by-step slideshow if the physio attached one, then a
           // plain thumbnail.
           if ((exercise.hostedVideoUrl ?? '').trim().isNotEmpty)
-            _EmbeddedExerciseVideo(url: exercise.hostedVideoUrl!, height: thumbnailHeight)
+            EmbeddedVideoPlayer(url: exercise.hostedVideoUrl!, height: thumbnailHeight)
           else if (exercise.stepImages.isNotEmpty)
-            _ExerciseImageCarousel(images: exercise.stepImages, height: thumbnailHeight)
+            StepImageCarousel(
+              images: exercise.stepImages
+                  .map((s) => <String, dynamic>{'image_url': s.imageUrl, 'label': s.label, 'order': s.order})
+                  .toList(),
+              height: thumbnailHeight,
+            )
           else
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -1033,321 +1059,3 @@ class _ExerciseFeedItemState extends State<_ExerciseFeedItem> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// EMBEDDED EXERCISE VIDEO – plays a hosted video file (e.g. a Supabase
-// Storage URL) in-app, right where the step-image slideshow would
-// otherwise go, instead of leaving the app for YouTube.
-// ---------------------------------------------------------------------------
-class _EmbeddedExerciseVideo extends StatefulWidget {
-  final String url;
-  final double height;
-  const _EmbeddedExerciseVideo({required this.url, required this.height});
-
-  @override
-  State<_EmbeddedExerciseVideo> createState() => _EmbeddedExerciseVideoState();
-}
-
-class _EmbeddedExerciseVideoState extends State<_EmbeddedExerciseVideo> {
-  VideoPlayerController? _videoController;
-  ChewieController? _chewieController;
-  bool _loading = true;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    try {
-      await controller.initialize();
-      if (!mounted) {
-        controller.dispose();
-        return;
-      }
-      setState(() {
-        _videoController = controller;
-        _chewieController = ChewieController(
-          videoPlayerController: controller,
-          // Never autoplay -- a patient scrolling their exercise list
-          // shouldn't get sound/data usage they didn't ask for.
-          autoPlay: false,
-          looping: false,
-          aspectRatio: controller.value.aspectRatio,
-          materialProgressColors: ChewieProgressColors(
-            playedColor: const Color(0xFF0A6EBD),
-            handleColor: const Color(0xFF0A6EBD),
-            bufferedColor: Colors.grey[300]!,
-            backgroundColor: Colors.grey[200]!,
-          ),
-          placeholder: Container(color: Colors.grey[100]),
-          errorBuilder: (_, __) => _errorPlaceholder(),
-        );
-        _loading = false;
-      });
-    } catch (_) {
-      controller.dispose();
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _failed = true;
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _chewieController?.dispose();
-    _videoController?.dispose();
-    super.dispose();
-  }
-
-  Widget _errorPlaceholder() {
-    return Container(
-      color: Colors.grey[100],
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: Colors.grey[400], size: 32),
-            const SizedBox(height: 6),
-            Text('Could not load video', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: double.infinity,
-        height: widget.height,
-        child: _loading
-            ? Container(color: Colors.grey[100], child: const Center(child: CircularProgressIndicator(strokeWidth: 2)))
-            : (_failed || _chewieController == null)
-                ? _errorPlaceholder()
-                : Chewie(controller: _chewieController!),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// EXERCISE STEP IMAGE CAROUSEL – slideshow of a physio's step-by-step photos
-// ---------------------------------------------------------------------------
-class _ExerciseImageCarousel extends StatefulWidget {
-  final List<StepImage> images;
-  final double height;
-
-  const _ExerciseImageCarousel({required this.images, required this.height});
-
-  @override
-  State<_ExerciseImageCarousel> createState() => _ExerciseImageCarouselState();
-}
-
-class _ExerciseImageCarouselState extends State<_ExerciseImageCarousel> {
-  int _currentPage = 0;
-  Timer? _autoPlayTimer;
-  bool _isPlaying = false;
-  bool _precached = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Preload every step image up front so switching between them (via
-    // swipe, buttons, or auto-play) always finds the image already
-    // decoded and in cache. Without this, Image.network still has to
-    // fetch over the network on first display, so by the time it's
-    // actually ready to paint the fade-in animation has already finished
-    // and the image just pops in instead of fading.
-    if (!_precached) {
-      _precached = true;
-      for (final img in widget.images) {
-        precacheImage(CachedNetworkImageProvider(img.imageUrl), context);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _autoPlayTimer?.cancel();
-    super.dispose();
-  }
-
-  void _stopAutoPlay() {
-    _autoPlayTimer?.cancel();
-    _autoPlayTimer = null;
-    if (_isPlaying) setState(() => _isPlaying = false);
-  }
-
-  void _togglePlay() {
-    if (_isPlaying) {
-      _stopAutoPlay();
-      return;
-    }
-    setState(() {
-      _isPlaying = true;
-      // Restart from the beginning if Play is pressed while already on
-      // the last frame, so there's something to actually play through.
-      if (_currentPage >= widget.images.length - 1) _currentPage = 0;
-    });
-    _autoPlayTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      // Play through once and stop on the last frame instead of looping.
-      if (_currentPage >= widget.images.length - 1) {
-        _stopAutoPlay();
-        return;
-      }
-      _advance(1);
-    });
-  }
-
-  void _advance(int delta) {
-    setState(() {
-      _currentPage = (_currentPage + delta + widget.images.length) % widget.images.length;
-    });
-  }
-
-  void _onManualNavigate(int delta) {
-    _stopAutoPlay();
-    _advance(delta);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final images = widget.images;
-    final current = images[_currentPage];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: double.infinity,
-            height: widget.height,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(color: Colors.grey[100]),
-                GestureDetector(
-                  onHorizontalDragEnd: (details) {
-                    final velocity = details.primaryVelocity ?? 0;
-                    if (velocity < -200) {
-                      _onManualNavigate(1); // swiped left -> next
-                    } else if (velocity > 200) {
-                      _onManualNavigate(-1); // swiped right -> previous
-                    }
-                  },
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 350),
-                    transitionBuilder: (child, animation) =>
-                        FadeTransition(opacity: animation, child: child),
-                    child: CachedNetworkImage(
-                      imageUrl: current.imageUrl,
-                      key: ValueKey(_currentPage),
-                      fit: BoxFit.contain,
-                      memCacheWidth: (MediaQuery.of(context).size.width * MediaQuery.of(context).devicePixelRatio).round(),
-                      // The outer AnimatedSwitcher already cross-fades between
-                      // step images, so skip this widget's own fade-in to
-                      // avoid animating twice.
-                      fadeInDuration: Duration.zero,
-                      placeholder: (_, __) => Center(
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey[400]),
-                        ),
-                      ),
-                      errorWidget: (_, __, ___) => Center(
-                        child: Icon(Icons.image_not_supported, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 6,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _carouselButton(Icons.chevron_left, () => _onManualNavigate(-1)),
-                  ),
-                ),
-                Positioned(
-                  right: 6,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _carouselButton(Icons.chevron_right, () => _onManualNavigate(1)),
-                  ),
-                ),
-                Positioned(
-                  right: 6,
-                  bottom: 6,
-                  child: _carouselButton(
-                    _isPlaying ? Icons.pause : Icons.play_arrow,
-                    _togglePlay,
-                    small: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-
-        // Dot indicator + step label
-        Row(
-          children: [
-            ...List.generate(images.length, (i) {
-              final isActive = i == _currentPage;
-              return Container(
-                margin: const EdgeInsets.only(right: 4),
-                width: isActive ? 8 : 6,
-                height: isActive ? 8 : 6,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isActive ? Colors.green[700] : Colors.grey[300],
-                ),
-              );
-            }),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Step ${_currentPage + 1} of ${images.length}'
-                '${(current.label != null && current.label!.trim().isNotEmpty) ? ' — ${current.label}' : ''}',
-                style: TextStyle(color: Colors.grey[700], fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _carouselButton(IconData icon, VoidCallback onTap, {bool small = false}) {
-    // Deliberately still a dark scrim, unlike the rest of this screen --
-    // this overlays directly on top of a photo of unpredictable content/
-    // color, so it needs guaranteed contrast rather than following the
-    // light theme (same reasoning as the QR scanner overlays).
-    final size = small ? 30.0 : 36.0;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.45),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: Colors.white, size: small ? 18 : 22),
-      ),
-    );
-  }
-}

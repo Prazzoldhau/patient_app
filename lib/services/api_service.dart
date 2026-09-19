@@ -362,4 +362,18 @@ class ApiService {
     final d = jsonDecode(r.data as String);
     return List<Map<String, dynamic>>.from(d['lab_requests']);
   }
+
+  // ── Exercise library (browse) ────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getBrowseRegions() async {
+    final r = await _dio.get('/api/browse/regions/');
+    final d = jsonDecode(r.data as String);
+    return List<Map<String, dynamic>>.from(d['regions']);
+  }
+
+  Future<List<Map<String, dynamic>>> getBrowseExercises(int subregionId) async {
+    final r = await _dio.get('/api/browse/exercises/', queryParameters: {'subregion_id': subregionId});
+    final d = jsonDecode(r.data as String);
+    return List<Map<String, dynamic>>.from(d['exercises']);
+  }
 }
