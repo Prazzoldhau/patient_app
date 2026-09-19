@@ -1,4 +1,4 @@
-package com.example.sajhya_patient_app
+package com.example.sajhya_patient_browse
 
 import io.flutter.embedding.android.FlutterActivity
 
