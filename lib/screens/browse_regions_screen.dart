@@ -19,6 +19,17 @@ class _BrowseRegionsScreenState extends State<BrowseRegionsScreen> {
   bool _loading = true;
   int? _expandedRegionId;
 
+  // Backend region_name -> icon asset. "Chest" is displayed as "Trunk" (see
+  // _formatRegionName) but keeps its backend name here since that's what
+  // the API returns.
+  static const Map<String, String> _regionIcons = {
+    'Head_and_Neck': 'assets/body_regions/head_and_neck.png',
+    'Spine': 'assets/body_regions/spine.png',
+    'Chest': 'assets/body_regions/trunk.png',
+    'Upper Limb': 'assets/body_regions/upper_limb.png',
+    'Lower Limb': 'assets/body_regions/lower_limb.png',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -88,6 +99,8 @@ class _BrowseRegionsScreenState extends State<BrowseRegionsScreen> {
               padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
+                  _regionIcon(region['region_name'] as String? ?? ''),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,9 +164,21 @@ class _BrowseRegionsScreenState extends State<BrowseRegionsScreen> {
     );
   }
 
+  Widget _regionIcon(String regionName) {
+    final asset = _regionIcons[regionName];
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: asset != null
+          ? Image.asset(asset, width: 48, height: 48, fit: BoxFit.cover)
+          : Container(width: 48, height: 48, color: Colors.grey[100]),
+    );
+  }
+
   // Backend names are a mix of casing/underscores ("Head_and_Neck", "brain",
-  // "cranial nerves") -- normalize to Title Case for display.
+  // "cranial nerves") -- normalize to Title Case for display. "Chest" shows
+  // as "Trunk" to match the icon set, without renaming the backend Region.
   String _formatRegionName(String raw) {
+    if (raw == 'Chest') return 'Trunk';
     return raw
         .replaceAll('_', ' ')
         .split(' ')
