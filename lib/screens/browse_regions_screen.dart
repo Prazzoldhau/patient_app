@@ -1,6 +1,7 @@
 // lib/screens/browse_regions_screen.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../utils/region_display.dart';
 import 'browse_exercise_list_screen.dart';
 
 /// Entry point for a patient exploring the exercise library themselves,
@@ -8,7 +9,12 @@ import 'browse_exercise_list_screen.dart';
 /// no mark-done/feedback here, see patient_api_browse_exercises's
 /// docstring on the backend for why.
 class BrowseRegionsScreen extends StatefulWidget {
-  const BrowseRegionsScreen({super.key});
+  // Opens with this region already expanded, e.g. when a patient taps a
+  // specific body-region icon on the dashboard rather than the generic
+  // "Browse Library" link.
+  final int? initialExpandedRegionId;
+
+  const BrowseRegionsScreen({super.key, this.initialExpandedRegionId});
 
   @override
   State<BrowseRegionsScreen> createState() => _BrowseRegionsScreenState();
@@ -19,20 +25,10 @@ class _BrowseRegionsScreenState extends State<BrowseRegionsScreen> {
   bool _loading = true;
   int? _expandedRegionId;
 
-  // Backend region_name -> icon asset. "Chest" is displayed as "Trunk" (see
-  // _formatRegionName) but keeps its backend name here since that's what
-  // the API returns.
-  static const Map<String, String> _regionIcons = {
-    'Head_and_Neck': 'assets/body_regions/head_and_neck.png',
-    'Spine': 'assets/body_regions/spine.png',
-    'Chest': 'assets/body_regions/trunk.png',
-    'Upper Limb': 'assets/body_regions/upper_limb.png',
-    'Lower Limb': 'assets/body_regions/lower_limb.png',
-  };
-
   @override
   void initState() {
     super.initState();
+    _expandedRegionId = widget.initialExpandedRegionId;
     _load();
   }
 
@@ -165,7 +161,7 @@ class _BrowseRegionsScreenState extends State<BrowseRegionsScreen> {
   }
 
   Widget _regionIcon(String regionName) {
-    final asset = _regionIcons[regionName];
+    final asset = RegionDisplay.icons[regionName];
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
       child: asset != null
@@ -174,16 +170,5 @@ class _BrowseRegionsScreenState extends State<BrowseRegionsScreen> {
     );
   }
 
-  // Backend names are a mix of casing/underscores ("Head_and_Neck", "brain",
-  // "cranial nerves") -- normalize to Title Case for display. "Chest" shows
-  // as "Trunk" to match the icon set, without renaming the backend Region.
-  String _formatRegionName(String raw) {
-    if (raw == 'Chest') return 'Trunk';
-    return raw
-        .replaceAll('_', ' ')
-        .split(' ')
-        .where((w) => w.isNotEmpty)
-        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
-        .join(' ');
-  }
+  String _formatRegionName(String raw) => RegionDisplay.formatName(raw);
 }

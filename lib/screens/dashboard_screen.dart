@@ -13,6 +13,7 @@ import 'marketplace_screen.dart';
 import 'physio_contact_screen.dart';
 import 'services_screen.dart';
 import 'browse_regions_screen.dart';
+import '../utils/region_display.dart';
 
 // --- Models ---
 class StepImage {
@@ -139,6 +140,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // panel collapses whichever other card had one open - only one at a time.
   final ValueNotifier<int?> _expandedExerciseId = ValueNotifier(null);
 
+  // null = still loading (or not needed, when a prescription exists), []
+  // = load failed or nothing browsable -- either way _buildEmptyState()
+  // falls back to the plain "No Prescriptions Yet" message.
+  List<Map<String, dynamic>>? _browseRegions;
+
   @override
   void initState() {
     super.initState();
@@ -150,12 +156,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final rawPrescription = widget.patientData['latest_prescription'];
     if (rawPrescription != null) {
       _prefetchExerciseImages(Prescription.fromJson(rawPrescription));
+    } else {
+      // No prescription to show -- fetch the browsable regions so the
+      // empty state can offer selectable body-region icons instead of
+      // just telling the patient to go find "Browse Library" themselves.
+      _loadBrowseRegions();
     }
 
     // Fire-and-forget daily-open ping. Dashboard only loads after a
     // confirmed login, so this is a much cleaner "did they actually use
     // the app today" signal than trying to infer it from server sessions.
     ApiService().pingAppOpen().catchError((_) {});
+  }
+
+  Future<void> _loadBrowseRegions() async {
+    try {
+      final regions = await ApiService().getBrowseRegions();
+      if (mounted) setState(() => _browseRegions = regions);
+    } catch (_) {
+      if (mounted) setState(() => _browseRegions = []);
+    }
   }
 
   void _prefetchExerciseImages(Prescription prescription) {
@@ -400,24 +420,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildEmptyState() {
+    // Only regions with at least one non-empty subregion are worth
+    // offering -- mirrors the filtering BrowseRegionsScreen does before
+    // rendering a region card.
+    final pickableRegions = (_browseRegions ?? []).where((r) {
+      final subregions = List<Map<String, dynamic>>.from(r['subregions'] ?? []);
+      return subregions.any((sr) => (sr['exercise_count'] as int? ?? 0) > 0);
+    }).toList();
+
     return CustomCard(
       color: Colors.grey[50]!,
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
       child: Column(
         children: [
-          Icon(Icons.assignment_outlined, size: 48, color: Colors.grey[400]),
-          const SizedBox(height: 12),
+          Icon(Icons.assignment_outlined, size: 40, color: Colors.grey[400]),
+          const SizedBox(height: 10),
           const Text(
             'No Prescriptions Yet',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87),
           ),
           const SizedBox(height: 4),
           Text(
-            'You do not have any exercise prescriptions.',
+            pickableRegions.isEmpty
+                ? 'You do not have any exercise prescriptions.'
+                : 'While you wait for a physio, explore exercises for a specific area:',
             style: TextStyle(color: Colors.grey[600]),
             textAlign: TextAlign.center,
           ),
+          if (_browseRegions == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 20),
+              child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (pickableRegions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 18),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                alignment: WrapAlignment.center,
+                children: [for (final r in pickableRegions) _regionQuickTile(r)],
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _regionQuickTile(Map<String, dynamic> region) {
+    final name = region['region_name'] as String? ?? '';
+    final asset = RegionDisplay.icons[name];
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BrowseRegionsScreen(initialExpandedRegionId: region['id'] as int?),
+        ),
+      ),
+      child: SizedBox(
+        width: 72,
+        child: Column(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: asset != null
+                  ? Image.asset(asset, width: 56, height: 56, fit: BoxFit.cover)
+                  : Container(width: 56, height: 56, color: Colors.grey[200]),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              RegionDisplay.formatName(name),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.black87),
+            ),
+          ],
+        ),
       ),
     );
   }
