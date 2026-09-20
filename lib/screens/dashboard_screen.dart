@@ -428,42 +428,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return subregions.any((sr) => (sr['exercise_count'] as int? ?? 0) > 0);
     }).toList();
 
-    return CustomCard(
-      color: Colors.grey[50]!,
-      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-      child: Column(
-        children: [
-          Icon(Icons.assignment_outlined, size: 40, color: Colors.grey[400]),
-          const SizedBox(height: 10),
-          const Text(
-            'No Prescriptions Yet',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            pickableRegions.isEmpty
-                ? 'You do not have any exercise prescriptions.'
-                : 'While you wait for a physio, explore exercises for a specific area:',
-            style: TextStyle(color: Colors.grey[600]),
-            textAlign: TextAlign.center,
-          ),
-          if (_browseRegions == null)
-            const Padding(
-              padding: EdgeInsets.only(top: 20),
-              child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)),
-            )
-          else if (pickableRegions.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 18),
-              child: Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                alignment: WrapAlignment.center,
-                children: [for (final r in pickableRegions) _regionQuickTile(r)],
-              ),
-            ),
-        ],
-      ),
+    if (_browseRegions == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+
+    if (pickableRegions.isEmpty) {
+      return CustomCard(
+        color: Colors.grey[50]!,
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'You do not have any exercise prescriptions.',
+          style: TextStyle(color: Colors.grey[600]),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 16,
+      runSpacing: 16,
+      alignment: WrapAlignment.center,
+      children: [for (final r in pickableRegions) _regionQuickTile(r)],
     );
   }
 
